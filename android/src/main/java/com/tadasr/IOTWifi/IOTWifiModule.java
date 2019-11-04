@@ -28,6 +28,7 @@ public class IOTWifiModule extends ReactContextBaseJavaModule {
     private WifiManager wifiManager;
     private ConnectivityManager connectivityManager;
     private ReactApplicationContext context;
+    private ConnectivityManager.NetworkCallback networkCallback;
 
     public IOTWifiModule(ReactApplicationContext reactContext) {
         super(reactContext);
@@ -76,8 +77,7 @@ public class IOTWifiModule extends ReactContextBaseJavaModule {
                     .addTransportType(NetworkCapabilities.TRANSPORT_WIFI).setNetworkSpecifier(wifiNetworkSpecifier)
                     .build();
 
-            connectivityManager.requestNetwork(networkRequest, new ConnectivityManager.NetworkCallback() {
-
+            networkCallback = new ConnectivityManager.NetworkCallback() {
                 @Override
                 public void onAvailable(Network network) {
                 }
@@ -86,7 +86,8 @@ public class IOTWifiModule extends ReactContextBaseJavaModule {
                 public void onLost(Network network) {
                     connectivityManager.unregisterNetworkCallback(this);
                 }
-            });
+            };
+            connectivityManager.requestNetwork(networkRequest, networkCallback);
             callback.invoke();
             return;
         }
@@ -211,6 +212,11 @@ public class IOTWifiModule extends ReactContextBaseJavaModule {
 
     @ReactMethod
     public void removeSSID(String ssid, Boolean unbind, Callback callback) {
+        if (Build.VERSION.SDK_INT > 28) {
+            connectivityManager.unregisterNetworkCallback(networkCallback);
+            callback.invoke();
+            return;
+        }
         if (!removeSSID(ssid)) {
             callback.invoke(errorFromCode(FailureCodes.SYSTEM_ADDED_CONFIG_EXISTS));
             return;

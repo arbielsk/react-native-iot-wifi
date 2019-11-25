@@ -11,10 +11,12 @@ import android.net.wifi.WifiNetworkSpecifier;
 import android.net.wifi.WifiInfo;
 import android.net.wifi.WifiManager;
 import android.net.wifi.WifiConfiguration;
+import android.net.wifi.WifiNetworkSuggestion;
 import android.content.Context;
 import android.os.Build;
 import android.util.Log;
 
+import java.util.ArrayList;
 import java.util.List;
 
 class FailureCodes {
@@ -28,7 +30,6 @@ public class IOTWifiModule extends ReactContextBaseJavaModule {
     private WifiManager wifiManager;
     private ConnectivityManager connectivityManager;
     private ReactApplicationContext context;
-    private ConnectivityManager.NetworkCallback networkCallback;
 
     public IOTWifiModule(ReactApplicationContext reactContext) {
         super(reactContext);
@@ -70,24 +71,23 @@ public class IOTWifiModule extends ReactContextBaseJavaModule {
 
     private void connectToWifi(String ssid, String passphrase, Boolean isWEP, Boolean bindNetwork, Callback callback) {
         if (Build.VERSION.SDK_INT > 28) {
-            WifiNetworkSpecifier wifiNetworkSpecifier = new WifiNetworkSpecifier.Builder().setSsid(ssid)
-                    .setWpa2Passphrase(passphrase).build();
+            Log.d("IoTWifi", "ssid = " + ssid);
+            Log.d("IoTWifi", "passphrase = " + passphrase);
+            final WifiNetworkSuggestion networkSuggestion = new WifiNetworkSuggestion.Builder().setSsid(ssid)
+                    .setWpa2Passphrase(passphrase).setPriority(100).build();
+            Log.d("IoTWifi", "networksuggestion " + networkSuggestion.toString());
 
-            NetworkRequest networkRequest = new NetworkRequest.Builder()
-                    .addTransportType(NetworkCapabilities.TRANSPORT_WIFI).setNetworkSpecifier(wifiNetworkSpecifier)
-                    .build();
-
-            networkCallback = new ConnectivityManager.NetworkCallback() {
-                @Override
-                public void onAvailable(Network network) {
-                }
-
-                @Override
-                public void onLost(Network network) {
-                    connectivityManager.unregisterNetworkCallback(this);
-                }
-            };
-            connectivityManager.requestNetwork(networkRequest, networkCallback);
+            final List<WifiNetworkSuggestion> networkSuggestions = new ArrayList<WifiNetworkSuggestion>();
+            // remove all networksuggestion by passing an empty Array
+            final int removeStatus = wifiManager.removeNetworkSuggestions(networkSuggestions);
+            Log.d("IoTWifi", "removeStatus = " + removeStatus);
+            networkSuggestions.add(networkSuggestion);
+            final int addStatus = wifiManager.addNetworkSuggestions(networkSuggestions);
+            Log.d("IoTWifi", "addStatus = " + addStatus);
+            if (addStatus != WifiManager.STATUS_NETWORK_SUGGESTIONS_SUCCESS) {
+                callback.invoke(errorFromCode(addStatus));
+                return;
+            }
             callback.invoke();
             return;
         }
@@ -212,11 +212,6 @@ public class IOTWifiModule extends ReactContextBaseJavaModule {
 
     @ReactMethod
     public void removeSSID(String ssid, Boolean unbind, Callback callback) {
-        if (Build.VERSION.SDK_INT > 28) {
-            connectivityManager.unregisterNetworkCallback(networkCallback);
-            callback.invoke();
-            return;
-        }
         if (!removeSSID(ssid)) {
             callback.invoke(errorFromCode(FailureCodes.SYSTEM_ADDED_CONFIG_EXISTS));
             return;
@@ -229,6 +224,15 @@ public class IOTWifiModule extends ReactContextBaseJavaModule {
     }
 
     private boolean removeSSID(String ssid) {
+        if (Build.VERSION.SDK_INT > 28) {
+            final int removeStatus = wifiManager.removeNetworkSuggestions(new ArrayList<WifiNetworkSuggestion>());
+            Log.d("IoTWifi", "removeStatus = " + removeStatus);
+            if (removeStatus != WifiManager.STATUS_NETWORK_SUGGESTIONS_SUCCESS) {
+                return false;
+            }
+            return true;
+        }
+
         boolean success = true;
         // Remove the existing configuration for this network
         WifiConfiguration existingNetworkConfigForSSID = getExistingNetworkConfig(ssid);
